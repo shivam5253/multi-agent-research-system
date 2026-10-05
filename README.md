@@ -12,7 +12,7 @@ The final result is presented through a simple Streamlit web interface.
 
 ## 🚀 Live Demo
 
-Coming soon...
+https://multi-agent-research-system-9bbqdpm3nmchagajzbhqez.streamlit.app/
 
 ---
 
