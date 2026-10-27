@@ -1,6 +1,7 @@
 
 import time
 from groq import RateLimitError
+from langchain_core.messages import HumanMessage
 
 from agents import (
     build_reader_agent,
@@ -10,107 +11,118 @@ from agents import (
 )
 
 
-def run_research_pipeline(topic: str) -> dict:
+def invoke_with_retry(operation, attempts=3):
+    """Retry temporary Groq rate-limit errors."""
+    for attempt in range(attempts):
+        try:
+            return operation()
+        except RateLimitError:
+            if attempt == attempts - 1:
+                raise
 
+            wait_seconds = 5 * (attempt + 1)
+            print(f"Groq rate limit reached. Waiting {wait_seconds}s...")
+            time.sleep(wait_seconds)
+
+
+def run_research_pipeline(topic: str) -> dict:
     state = {}
 
     # STEP 1: Search Agent
-    print("\n" + " =" * 50)
-    print("Step 1 - Search agent is working...")
+    print("\n" + "=" * 50)
+    print("STEP 1 - Search Agent")
     print("=" * 50)
 
     search_agent = build_search_agent()
 
-    search_result = search_agent.invoke({
-        "messages": [
-            (
-                "user",
-                f"Find recent, reliable and detailed information about: {topic}"
-            )
-        ]
-    })
+    search_result = invoke_with_retry(
+        lambda: search_agent.invoke({
+            "messages": [
+                HumanMessage(
+                    content=(
+                        "Find recent, reliable and detailed information "
+                        f"about: {topic}"
+                    )
+                )
+            ]
+        })
+    )
 
-    state["search_results"] = search_result["messages"][-1].content
-
-    print("\nSearch result:\n", state["search_results"])
+    state["search_results"] = (
+        search_result["messages"][-1].content
+    )
 
     # STEP 2: Reader Agent
-    print("\n" + " =" * 50)
-    print("Step 2 - Reader agent is scraping top resources...")
+    print("\n" + "=" * 50)
+    print("STEP 2 - Reader Agent")
     print("=" * 50)
 
     reader_agent = build_reader_agent()
 
-    reader_result = reader_agent.invoke({
-        "messages": [
-            (
-                "user",
-                f"Based on the following search results about '{topic}', "
-                "pick the most relevant URL and scrape it for deeper content.\n\n"
-                f"Search Results:\n{state['search_results'][:2500]}"
-            )
-        ]
-    })
+    reader_result = invoke_with_retry(
+        lambda: reader_agent.invoke({
+            "messages": [
+                HumanMessage(
+                    content=(
+                        f"Research topic: {topic}\n\n"
+                        "Select the most relevant URL from these "
+                        "search results and scrape it using the "
+                        "scrape_url tool. Summarize the extracted "
+                        "content accurately.\n\n"
+                        f"Search results:\n"
+                        f"{state['search_results'][:2500]}"
+                    )
+                )
+            ]
+        })
+    )
 
-    state["scraped_content"] = reader_result["messages"][-1].content
+    state["scraped_content"] = (
+        reader_result["messages"][-1].content
+    )
 
-    print("\nScraped content:\n", state["scraped_content"])
-
-    # STEP 3: Writer Agent
-    print("\n" + " =" * 50)
-    print("Step 3 - Writer is drafting the report...")
+    # STEP 3: Writer Chain
+    print("\n" + "=" * 50)
+    print("STEP 3 - Writer Chain")
     print("=" * 50)
 
     research_combined = (
-        f"SEARCH RESULTS:\n{state['search_results'][:2500]}\n\n"
-        f"DETAILED SCRAPED CONTENT:\n{state['scraped_content'][:6000]}"
+        f"SEARCH RESULTS:\n"
+        f"{state['search_results'][:2500]}\n\n"
+        f"DETAILED SCRAPED CONTENT:\n"
+        f"{state['scraped_content'][:6000]}"
     )
 
-    state["report"] = writer_chain.invoke({
-        "topic": topic,
-        "research": research_combined
-    })
+    state["report"] = invoke_with_retry(
+        lambda: writer_chain.invoke({
+            "topic": topic,
+            "research": research_combined,
+        })
+    )
 
-    print("\nFinal Report:\n", state["report"])
-
-    # STEP 4: Critic Agent
-    print("\n" + " =" * 50)
-    print("Step 4 - Critic is reviewing the report...")
+    # STEP 4: Critic Chain
+    print("\n" + "=" * 50)
+    print("STEP 4 - Critic Chain")
     print("=" * 50)
 
-    # Limit the report sent to the critic
-    report_for_critic = str(state["report"])[:5000]
+    state["feedback"] = invoke_with_retry(
+        lambda: critic_chain.invoke({
+            "report": state["report"][:5000]
+        })
+    )
 
-    max_attempts = 3
+    print("\nResearch pipeline completed successfully.")
 
-    for attempt in range(max_attempts):
-        try:
-            state["feedback"] = critic_chain.invoke({
-                "report": report_for_critic
-            })
-            break
-
-        except RateLimitError:
-            if attempt == max_attempts - 1:
-                print("Critic failed after multiple rate-limit retries.")
-                raise
-
-            wait_seconds = 5 * (attempt + 1)
-
-            print(
-                f"Groq rate limit reached. "
-                f"Retrying in {wait_seconds} seconds..."
-            )
-
-            time.sleep(wait_seconds)
-
-    print("\nCritic feedback:\n", state["feedback"])
-
-    # Return all pipeline results to the Streamlit app
     return state
 
 
-# Run pipeline when this file is executed directly
 if __name__ == "__main__":
-    topic = input("\nEnter a research topic: ")
-    result = run_research_pipeline(topic)
+    topic = input("Enter a research topic: ").strip()
+
+    if topic:
+        result = run_research_pipeline(topic)
+        print("\nFinal Report:\n", result["report"])
+        print("\nCritic Feedback:\n", result["feedback"])
+    else:
+        print("Please enter a research topic.")
+
