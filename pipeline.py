@@ -1,32 +1,42 @@
-from agents import build_reader_agent, build_search_agent, writer_chain, critic_chain
+
+import time
+from groq import RateLimitError
+
+from agents import (
+    build_reader_agent,
+    build_search_agent,
+    writer_chain,
+    critic_chain,
+)
 
 
 def run_research_pipeline(topic: str) -> dict:
 
     state = {}
 
-    # STEP 1: Search Agent → finds relevant information
+    # STEP 1: Search Agent
     print("\n" + " =" * 50)
-    print("step 1 - search agent is working ...")
+    print("Step 1 - Search agent is working...")
     print("=" * 50)
 
     search_agent = build_search_agent()
 
     search_result = search_agent.invoke({
         "messages": [
-            ("user", f"Find recent, reliable and detailed information about: {topic}")
+            (
+                "user",
+                f"Find recent, reliable and detailed information about: {topic}"
+            )
         ]
     })
 
-    # Save search agent's final response
     state["search_results"] = search_result["messages"][-1].content
 
-    print("\n search result ", state["search_results"])
+    print("\nSearch result:\n", state["search_results"])
 
-
-    # STEP 2: Reader Agent → selects URL and scrapes it
+    # STEP 2: Reader Agent
     print("\n" + " =" * 50)
-    print("step 2 - Reader agent is scraping top resources ...")
+    print("Step 2 - Reader agent is scraping top resources...")
     print("=" * 50)
 
     reader_agent = build_reader_agent()
@@ -36,27 +46,24 @@ def run_research_pipeline(topic: str) -> dict:
             (
                 "user",
                 f"Based on the following search results about '{topic}', "
-                f"pick the most relevant URL and scrape it for deeper content.\n\n"
+                "pick the most relevant URL and scrape it for deeper content.\n\n"
                 f"Search Results:\n{state['search_results'][:2500]}"
             )
         ]
     })
 
-    # Save scraped webpage content
     state["scraped_content"] = reader_result["messages"][-1].content
 
-    print("\nscraped content: \n", state["scraped_content"])
+    print("\nScraped content:\n", state["scraped_content"])
 
-
-    # STEP 3: Writer → creates final research report
+    # STEP 3: Writer Agent
     print("\n" + " =" * 50)
-    print("step 3 - Writer is drafting the report ...")
+    print("Step 3 - Writer is drafting the report...")
     print("=" * 50)
 
-    # Combine search + scraped data for Writer
     research_combined = (
-        f"SEARCH RESULTS : \n {state['search_results']} \n\n"
-        f"DETAILED SCRAPED CONTENT : \n {state['scraped_content']}"
+        f"SEARCH RESULTS:\n{state['search_results'][:2500]}\n\n"
+        f"DETAILED SCRAPED CONTENT:\n{state['scraped_content'][:6000]}"
     )
 
     state["report"] = writer_chain.invoke({
@@ -64,26 +71,46 @@ def run_research_pipeline(topic: str) -> dict:
         "research": research_combined
     })
 
-    print("\n Final Report\n", state["report"])
+    print("\nFinal Report:\n", state["report"])
 
-
-    # STEP 4: Critic → reviews the generated report
+    # STEP 4: Critic Agent
     print("\n" + " =" * 50)
-    print("step 4 - critic is reviewing the report ")
+    print("Step 4 - Critic is reviewing the report...")
     print("=" * 50)
 
-    state["feedback"] = critic_chain.invoke({
-        "report": state["report"]
-    })
+    # Limit the report sent to the critic
+    report_for_critic = str(state["report"])[:5000]
 
-    print("\n critic report \n", state["feedback"])
+    max_attempts = 3
 
+    for attempt in range(max_attempts):
+        try:
+            state["feedback"] = critic_chain.invoke({
+                "report": report_for_critic
+            })
+            break
 
-    # Return complete pipeline state
+        except RateLimitError:
+            if attempt == max_attempts - 1:
+                print("Critic failed after multiple rate-limit retries.")
+                raise
+
+            wait_seconds = 5 * (attempt + 1)
+
+            print(
+                f"Groq rate limit reached. "
+                f"Retrying in {wait_seconds} seconds..."
+            )
+
+            time.sleep(wait_seconds)
+
+    print("\nCritic feedback:\n", state["feedback"])
+
+    # Return all pipeline results to the Streamlit app
     return state
 
 
 # Run pipeline when this file is executed directly
 if __name__ == "__main__":
-    topic = input("\n Enter a research topic : ")
-    run_research_pipeline(topic)
+    topic = input("\nEnter a research topic: ")
+    result = run_research_pipeline(topic)
