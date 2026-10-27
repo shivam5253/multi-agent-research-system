@@ -1,5 +1,5 @@
-from dotenv import load_dotenv
 
+from dotenv import load_dotenv
 from langchain_groq import ChatGroq
 from langchain.agents import create_agent
 from langchain_core.prompts import ChatPromptTemplate
@@ -7,64 +7,47 @@ from langchain_core.output_parsers import StrOutputParser
 
 from tools import web_search, scrape_url
 
-
-# ============================================================
-# LOAD ENVIRONMENT VARIABLES
-# ============================================================
-
-# Load variables from .env file
 load_dotenv()
 
-
-# ============================================================
-# MODEL SETUP
-# ============================================================
-
-# Groq LLM used by all agents and chains
+# Groq free-tier model
 llm = ChatGroq(
     model="openai/gpt-oss-20b",
-    temperature=0
+    temperature=0,
+    max_retries=2,
 )
 
 
-# ============================================================
-# 1st AGENT - SEARCH AGENT
-
-# Search Agent → only searches the web using web_search
+# 1. Search Agent
 def build_search_agent():
     return create_agent(
         model=llm,
         tools=[web_search],
         system_prompt=(
             "You are a web research agent. "
-            "Your job is ONLY to search the web and return useful search results. "
-            "Use ONLY the web_search tool provided to you. "
-            "Never call or invent tools such as web_open, open_url, browse, "
-            "read_url, or any other tool. "
-            "The web_search tool accepts exactly one argument named 'query'. "
-            "Always provide the query argument as a string. "
-            "Do not attempt to open or scrape URLs. "
-            "Return the search results with titles, URLs and useful snippets."
-        )
+            "Search for recent, reliable and relevant information. "
+            "Use only the web_search tool for searching. "
+            "Never invent URLs, sources or tool results. "
+            "Return titles, URLs and useful snippets."
+        ),
     )
 
-# ============================================================
-# 2nd AGENT - READER AGENT
-# ============================================================
 
-# Reader Agent → uses scrape_url tool
+# 2. Reader Agent
 def build_reader_agent():
     return create_agent(
         model=llm,
-        tools=[scrape_url]
+        tools=[scrape_url],
+        system_prompt=(
+            "You are a research reader agent. "
+            "Identify the most relevant URL in the supplied search results. "
+            "Call scrape_url with the exact URL. "
+            "Summarize the extracted information accurately. "
+            "Never invent scraped content."
+        ),
     )
 
 
-# ============================================================
-# WRITER CHAIN
-# ============================================================
-
-# Prompt → Groq LLM → String output
+# 3. Writer Chain
 writer_prompt = ChatPromptTemplate.from_messages([
     (
         "system",
@@ -73,7 +56,7 @@ writer_prompt = ChatPromptTemplate.from_messages([
     ),
     (
         "human",
-        """Write a detailed research report on the topic below.
+        """Write a detailed research report.
 
 Topic:
 {topic}
@@ -81,41 +64,35 @@ Topic:
 Research Gathered:
 {research}
 
-Structure the report as:
+Structure:
+1. Introduction
+2. Key Findings (at least 3 explained points)
+3. Conclusion
+4. Sources (URLs available in the research)
 
-- Introduction
-- Key Findings (minimum 3 well-explained points)
-- Conclusion
-- Sources (list all URLs found in the research)
-
-Be detailed, factual and professional.
-Do not invent information that is not present in the research."""
+Be detailed and professional.
+Do not invent facts or sources.
+Distinguish verified findings from uncertain information."""
     ),
 ])
 
-# Create Writer chain
 writer_chain = writer_prompt | llm | StrOutputParser()
 
 
-# ============================================================
-# CRITIC CHAIN
-# ============================================================
-
-# Prompt → Groq LLM → String output
+# 4. Critic Chain
 critic_prompt = ChatPromptTemplate.from_messages([
     (
         "system",
-        "You are a sharp and constructive research critic. "
-        "Be honest, specific and objective."
+        "You are a strict, constructive and objective research critic."
     ),
     (
         "human",
-        """Review the research report below and evaluate it strictly.
+        """Evaluate the research report.
 
 Report:
 {report}
 
-Respond in this exact format:
+Use this exact format:
 
 Score: X/10
 
@@ -132,5 +109,4 @@ One line verdict:
     ),
 ])
 
-# Create Critic chain
 critic_chain = critic_prompt | llm | StrOutputParser()
