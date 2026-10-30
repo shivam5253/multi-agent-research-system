@@ -15,11 +15,22 @@ llm = ChatGroq(
 )
 
 
+
 # 1st agent
 def build_search_agent():
     return create_agent(
         model=llm,
-        tools=[web_search]
+        tools=[web_search],
+        system_prompt="""
+        You are a web research agent.
+
+        You have access to only one tool:
+        web_search.
+
+        Always use web_search to search for information.
+        Never call web_open, browse, scrape or any other tool.
+        Return relevant titles, URLs and information.
+        """
     )
 
 
@@ -27,9 +38,18 @@ def build_search_agent():
 def build_reader_agent():
     return create_agent(
         model=llm,
-        tools=[scrape_url]
-    )
+        tools=[scrape_url],
+        system_prompt="""
+        You are a research reader agent.
 
+        You have access to only one tool:
+        scrape_url.
+
+        Use scrape_url to extract content from URLs.
+        Never call web_open or any other tool.
+        Return detailed and relevant information.
+        """
+    )
 
 # Writer chain
 writer_prompt = ChatPromptTemplate.from_messages([
