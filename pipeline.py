@@ -59,11 +59,16 @@ def run_research_pipeline(topic : str) -> dict:
     print("step 4 - critic is reviewing the report ")
     print("="*50)
 
-    state["feedback"] = critic_chain.invoke({
-        "report":state['report']
-    })
+    # state["feedback"] = critic_chain.invoke({
+    #     "report":state['report']
+    # })
+
+    # print("\n critic report \n", state['feedback'])
+    # Critic temporarily disabled to avoid Groq rate limits
+    state["feedback"] = "Critic review temporarily disabled."
 
     print("\n critic report \n", state['feedback'])
+    
 
     return state
 
