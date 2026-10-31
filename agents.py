@@ -10,8 +10,9 @@ load_dotenv()
 
 # Model setup (Groq)
 llm = ChatGroq(
-     model="openai/gpt-oss-120b",
-    temperature=0
+    model="openai/gpt-oss-120b",
+    temperature=0,
+    max_tokens=1024
 )
 
 
