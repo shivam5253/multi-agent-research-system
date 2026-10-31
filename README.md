@@ -10,9 +10,6 @@ The final result is presented through a simple Streamlit web interface.
 
 ---
 
-## 🚀 Live Demo
-
-https://multi-agent-research-system-9bbqdpm3nmchagajzbhqez.streamlit.app/
 
 ---
 
@@ -71,3 +68,7 @@ Instead of using a single LLM prompt for everything, the application separates t
                      │
                      ▼
               Critic Feedback
+
+## 🚀 Live Demo
+
+https://multi-agent-research-system-9bbqdpm3nmchagajzbhqez.streamlit.app/
